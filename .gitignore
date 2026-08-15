@@ -18,6 +18,10 @@ venv/
 *.duckdb
 *.duckdb.wal
 
+# DecisionRecord 平台的 SQLite 資料庫(本地開發用,同樣道理:
+# .github/workflows/parse-decision.yml 用 `git add -f` 強制加回)。
+/trading.db
+
 # 編輯器
 .vscode/
 .idea/

@@ -1,0 +1,95 @@
+name: Parse Decision Record from Issue
+
+# 對應 docs/CLAUDE_INTEGRATION.md 方案 2:建 Issue → Actions 自動解析 → DB 自動更新。
+#
+# 安全性注意:Issue 內文是不可信輸入,絕對不能直接接進 `run:` shell 腳本字串
+# (`BODY="${{ github.event.issue.body }}"` 這種寫法是典型的 GitHub Actions
+# script-injection 漏洞,任何人開 Issue 都能在 runner 上跑任意指令)。
+# 這裡改成用 `env:` 把內文當環境變數傳進去,再用 Python 解析、驗證是合法
+# JSON 之後才寫檔案,run 步驟裡完全不會出現使用者可控的字串。
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  parse-and-save:
+    if: contains(github.event.issue.labels.*.name, 'decision-record')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Extract and validate JSON from issue body
+        id: extract
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import re
+          import sys
+
+          body = os.environ.get("ISSUE_BODY") or ""
+          match = re.search(r"```json\s*(\{.*?\})\s*```", body, re.DOTALL)
+          if not match:
+              print("::error::找不到 ```json ... ``` 區塊")
+              sys.exit(1)
+
+          payload_text = match.group(1)
+          try:
+              payload = json.loads(payload_text)
+          except json.JSONDecodeError as exc:
+              print(f"::error::JSON 解析失敗: {exc}")
+              sys.exit(1)
+
+          missing = [k for k in ("market_snapshot", "trader_state", "action") if k not in payload]
+          if missing:
+              print(f"::error::缺少必要欄位: {', '.join(missing)}")
+              sys.exit(1)
+
+          with open("decision_payload.json", "w", encoding="utf-8") as f:
+              json.dump(payload, f, ensure_ascii=False)
+          print("解析成功")
+          PY
+
+      - name: Write decision to DB
+        id: write
+        run: |
+          OUTPUT=$(python scripts/decision_writer.py --json "$(cat decision_payload.json)")
+          echo "$OUTPUT"
+          echo "message=$OUTPUT" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -f trading.db
+          git diff --cached --quiet || git commit -m "data: add decision from issue #${{ github.event.issue.number }}"
+          git push
+
+      - name: Comment result on issue
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = "${{ job.status }}" === "success"
+              ? `✅ 已寫入資料庫: ${{ toJson(steps.write.outputs.message) }}`
+              : "❌ 解析或寫入失敗,請檢查 Actions log 裡的錯誤訊息並修正 Issue 內文後重開一個新 Issue。";
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
