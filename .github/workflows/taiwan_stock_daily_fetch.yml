@@ -1,0 +1,49 @@
+name: Taiwan Stock AI Daily Fetch
+
+# 對應報告「排程」建議:免費雲端無伺服器,盤後批次用 GitHub Actions。
+#
+# 已知限制(見 docs/taiwan-stock-ai-blueprint.md):
+# - cron 不認得台灣國定假日,休市日仍會觸發,run_daily.py 只擋掉週六日。
+# - 官方 OpenAPI 快照端點多半只回「最新一期」,若當天官方資料尚未發布,
+#   這次執行可能拿到前一交易日的內容,詳見 taiwan_stock_ai/data/twse_client.py。
+
+on:
+  schedule:
+    # 07:30 UTC = 15:30 台北時間,盤後(13:30 收盤)留緩衝給官方資料發布。
+    - cron: '30 7 * * 1-5'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run daily fetch + signal engine
+        env:
+          DUCKDB_PATH: ${{ github.workspace }}/data/taiwan_stock.duckdb
+          FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
+        run: python -m taiwan_stock_ai.scheduler.run_daily
+
+      - name: Commit updated fact table
+        env:
+          DUCKDB_PATH: ${{ github.workspace }}/data/taiwan_stock.duckdb
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -f data/taiwan_stock.duckdb
+          git diff --cached --quiet || git commit -m "chore(data): daily fetch $(date -u +%Y-%m-%d)"
+          git push

@@ -1,0 +1,12 @@
+# 台股全能 AI 決策系統 MVP(taiwan_stock_ai/)所需套件。
+# 對應報告技術選型:DuckDB 事實表、規則引擎訊號、LINE Bot(FastAPI)、0 token。
+
+requests>=2.31
+duckdb>=1.0
+python-dotenv>=1.0
+fastapi>=0.110
+uvicorn[standard]>=0.29
+httpx>=0.27
+
+# 測試
+pytest>=8.0

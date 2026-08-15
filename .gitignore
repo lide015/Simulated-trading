@@ -1,0 +1,23 @@
+# 環境與密鑰
+.env
+*.env.local
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+.venv/
+venv/
+
+# DuckDB 事實表(本地開發用)。只忽略 repo 根目錄的 data/(前面加 / 錨定
+# 路徑),避免誤吃到 taiwan_stock_ai/data/ 這個放 WP1 client 程式碼的目錄。
+# GitHub Actions 的每日批次會用 `git add -f` 強制加回正式的
+# data/taiwan_stock.duckdb 快照,避免本地測試/實驗產生的資料庫檔案混進 commit。
+/data/
+*.duckdb
+*.duckdb.wal
+
+# 編輯器
+.vscode/
+.idea/
