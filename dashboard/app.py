@@ -85,8 +85,13 @@ def _render_candlestick(history: pd.DataFrame) -> None:
 
 
 def _render_stock_search(conn: duckdb.DuckDBPyConnection) -> None:
+    # GROUP BY + MAX(stock_name) 而非 SELECT DISTINCT:補歷史資料
+    # (scheduler/backfill_history.py)來源是 FinMind,不一定每一列都有
+    # 公司名稱,同一檔股票若有列 stock_name 是 NULL,DISTINCT 可能選到那筆
+    # 讓下拉選單顯示空白名稱;MAX() 會優先挑到非 NULL 的值。
     all_stocks = conn.execute(
-        "SELECT DISTINCT stock_id, stock_name FROM daily_quotes ORDER BY stock_id"
+        "SELECT stock_id, MAX(stock_name) AS stock_name FROM daily_quotes "
+        "GROUP BY stock_id ORDER BY stock_id"
     ).fetchall()
     if not all_stocks:
         st.info("事實表裡還沒有任何股票資料。")

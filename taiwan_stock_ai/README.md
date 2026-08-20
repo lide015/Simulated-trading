@@ -52,8 +52,12 @@ python -m taiwan_stock_ai.scheduler.run_daily
 # 啟動 LINE webhook 開發伺服器
 uvicorn taiwan_stock_ai.notify.line_bot:app --reload --port 8000
 
-# 啟動後台儀表板(唯讀,看事實表健康度、訊號、LINE 查詢預覽)
+# 啟動前台/後台儀表板(前台公開看行情、後台密碼保護看事實表健康度/訊號/
+# LINE 查詢預覽/DecisionRecord)
 streamlit run dashboard/app.py
+
+# 補歷史資料(FinMind,官方 OpenAPI 只有最新快照時用這個,見下方已知限制 1)
+python -m taiwan_stock_ai.scheduler.backfill_history
 
 # 跑測試(全部用合成資料,不打真實網路)
 pytest tests/
@@ -62,7 +66,12 @@ pytest tests/
 ## 已知限制(上線前必看)
 
 1. **官方 OpenAPI 多數端點只回最新一期快照,沒有歷史查詢參數**——歷史深度
-   要靠每天排程累積,補歷史資料需要另外處理(尚未實作)。
+   要靠每天排程累積。想立刻有像樣的 K 線,用
+   `taiwan_stock_ai/scheduler/backfill_history.py`(CLI 或
+   `.github/workflows/backfill_history.yml` workflow_dispatch)——改走
+   FinMind 的歷史區間查詢一次補回過去 N 天,預設自動選今天成交值最高的
+   30 檔補 90 天。FinMind 是備援來源,這支程式刻意只能手動觸發,不會被
+   排進每日 cron,不會取代 `twse_client` 當主要每日資料來源。
 2. **TWSE/TPEx 的欄位名稱對映是依訓練資料撰寫,未經即時連線驗證**(開發
    當下沙盒環境的網路政策擋掉了對外部網域的連線)。上線前務必手動 `curl`
    一次每個端點,對照 `data/twse_client.py`、`data/tpex_client.py` 裡的

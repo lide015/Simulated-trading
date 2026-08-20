@@ -1,0 +1,72 @@
+name: Taiwan Stock AI Backfill History
+
+# 手動觸發:官方 TWSE OpenAPI 的每日快照端點沒有歷史查詢參數,只能靠
+# taiwan_stock_daily_fetch.yml 每天累積一天。這支工作流程改用 FinMind
+# 的歷史區間查詢,一次把過去 N 天補回來,見
+# taiwan_stock_ai/scheduler/backfill_history.py 的說明。
+#
+# 不排程執行(只有 workflow_dispatch)——FinMind 是備援/交叉驗證來源,
+# 不該取代 twse_client 當每日主要資料來源。
+
+on:
+  workflow_dispatch:
+    inputs:
+      stock_ids:
+        description: "逗號分隔的股票代號(留空 = 自動選成交值最高的股票)"
+        required: false
+        default: ""
+      limit:
+        description: "留空 stock_ids 時,自動選幾檔"
+        required: false
+        default: "30"
+      days:
+        description: "往回補幾天"
+        required: false
+        default: "90"
+
+permissions:
+  contents: write
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run backfill
+        env:
+          DUCKDB_PATH: ${{ github.workspace }}/data/taiwan_stock.duckdb
+          FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
+          STOCK_IDS: ${{ inputs.stock_ids }}
+        run: |
+          ARGS="--limit ${{ inputs.limit }} --days ${{ inputs.days }}"
+          if [ -n "$STOCK_IDS" ]; then
+            ARGS="--stock-ids $STOCK_IDS --days ${{ inputs.days }}"
+          fi
+          python -m taiwan_stock_ai.scheduler.backfill_history $ARGS
+
+      - name: Commit updated fact table
+        env:
+          DUCKDB_PATH: ${{ github.workspace }}/data/taiwan_stock.duckdb
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -f data/taiwan_stock.duckdb
+          if git diff --cached --quiet; then
+            echo "沒有新資料,略過 commit"
+            exit 0
+          fi
+          git commit -m "chore(data): backfill history ($(date -u +%Y-%m-%d))"
+          # actions/checkout 預設是 detached HEAD,plain `git push` 在這種狀態下
+          # 會直接失敗,明確指定 refspec 才能把內容推到正確分支。
+          git push origin "HEAD:${GITHUB_REF_NAME}"
