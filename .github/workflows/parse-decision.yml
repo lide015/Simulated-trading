@@ -64,20 +64,51 @@ jobs:
           print("解析成功")
           PY
 
-      - name: Write decision to DB
+      - name: Write decision to DB and push
         id: write
         run: |
-          OUTPUT=$(python scripts/decision_writer.py --json "$(cat decision_payload.json)")
-          echo "$OUTPUT"
-          echo "message=$OUTPUT" >> "$GITHUB_OUTPUT"
-
-      - name: Commit and push
-        run: |
+          # trading.db 是 SQLite 二進位檔,兩個 Issue 幾乎同時開的話沒辦法用
+          # git merge/rebase 處理衝突——所以每次重試都先 fetch+reset 到最新
+          # origin,在「最新」的 trading.db 上重跑一次寫入,而不是對本地過期
+          # 的 commit 硬 push。decision_writer.py 對重複 id 本來就會拒絕,
+          # 所以就算同一個 Issue 因為某種原因觸發兩次 workflow 也是安全的。
+          #
+          # actions/checkout 預設是 detached HEAD,plain `git push` 在這種
+          # 狀態下會直接失敗,所以一律用 `git push origin HEAD:<branch>`。
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -f trading.db
-          git diff --cached --quiet || git commit -m "data: add decision from issue #${{ github.event.issue.number }}"
-          git push
+
+          for attempt in 1 2 3 4 5; do
+            git fetch origin "${GITHUB_REF_NAME}"
+            git reset --hard "origin/${GITHUB_REF_NAME}"
+
+            set +e
+            OUTPUT=$(python scripts/decision_writer.py --json "$(cat decision_payload.json)")
+            STATUS=$?
+            set -e
+            echo "$OUTPUT"
+            if [ "$STATUS" -ne 0 ]; then
+              echo "::error::寫入資料庫失敗,詳見上方輸出"
+              exit 1
+            fi
+            echo "message=$OUTPUT" >> "$GITHUB_OUTPUT"
+
+            git add -f trading.db
+            if git diff --cached --quiet; then
+              echo "trading.db 沒有變化,略過 commit"
+              exit 0
+            fi
+            git commit -m "data: add decision from issue #${{ github.event.issue.number }}"
+
+            if git push origin "HEAD:${GITHUB_REF_NAME}"; then
+              exit 0
+            fi
+            echo "push 失敗(可能有其他 workflow 同時在寫),重試 ${attempt}/5"
+            sleep $((attempt * 3))
+          done
+
+          echo "::error::push 重試多次仍失敗"
+          exit 1
 
       - name: Comment result on issue
         if: always()

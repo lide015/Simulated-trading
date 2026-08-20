@@ -17,6 +17,7 @@ import logging
 
 import httpx
 from fastapi import FastAPI, Header, HTTPException, Request
+from starlette.concurrency import run_in_threadpool
 
 from taiwan_stock_ai.config import settings
 from taiwan_stock_ai.notify.queries import handle_query
@@ -54,27 +55,36 @@ async def webhook(request: Request, x_line_signature: str = Header(default="")) 
     payload = await request.json()
     events = payload.get("events", [])
 
-    conn = get_connection()
-    try:
-        for event in events:
-            await _handle_event(conn, event)
-    finally:
-        conn.close()
+    # webhook 是 async def,但 DuckDB 查詢是同步阻塞 I/O;直接在這裡跑會卡住
+    # 整個事件迴圈,擋住其他併發請求(包含底下要送出的 LINE reply)。用
+    # run_in_threadpool 把「查資料庫、組回覆文字」丟到執行緒池,拿到結果
+    # 之後再回到 async 世界呼叫 LINE API。
+    replies = await run_in_threadpool(_collect_replies, events)
+    for reply_token, reply_text in replies:
+        await _reply(reply_token, reply_text)
 
     return {"status": "ok"}
 
 
-async def _handle_event(conn, event: dict) -> None:
-    if event.get("type") != "message":
-        return
-    message = event.get("message", {})
-    if message.get("type") != "text":
-        return
-
-    reply_token = event.get("replyToken")
-    text = message.get("text", "")
-    reply_text = handle_query(conn, text)
-    await _reply(reply_token, reply_text)
+def _collect_replies(events: list[dict]) -> list[tuple[str, str]]:
+    """同步處理所有事件:查資料庫、組回覆文字。回傳 (replyToken, 文字) 清單。"""
+    conn = get_connection()
+    try:
+        results: list[tuple[str, str]] = []
+        for event in events:
+            if event.get("type") != "message":
+                continue
+            message = event.get("message", {})
+            if message.get("type") != "text":
+                continue
+            reply_token = event.get("replyToken")
+            if not reply_token:
+                continue
+            text = message.get("text", "")
+            results.append((reply_token, handle_query(conn, text)))
+        return results
+    finally:
+        conn.close()
 
 
 async def _reply(reply_token: str, text: str) -> None:

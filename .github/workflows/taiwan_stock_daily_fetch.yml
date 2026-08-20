@@ -45,5 +45,13 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -f data/taiwan_stock.duckdb
-          git diff --cached --quiet || git commit -m "chore(data): daily fetch $(date -u +%Y-%m-%d)"
-          git push
+          if git diff --cached --quiet; then
+            echo "沒有新資料,略過 commit"
+            exit 0
+          fi
+          git commit -m "chore(data): daily fetch $(date -u +%Y-%m-%d)"
+          # actions/checkout 預設是 detached HEAD,plain `git push` 在這種狀態下
+          # 會直接失敗(fatal: You are not currently on a branch.)。明確指定
+          # refspec 才能把 detached HEAD 的內容推到正確分支,不管 checkout
+          # 當下究竟有沒有 detach 都適用,是嚴格更安全的寫法。
+          git push origin "HEAD:${GITHUB_REF_NAME}"

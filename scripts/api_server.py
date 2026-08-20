@@ -8,6 +8,7 @@ Claude(或其他外部程式)透過網路呼叫時才需要啟動,而且啟動�
 """
 from __future__ import annotations
 
+import hmac
 import os
 import sys
 from pathlib import Path
@@ -32,7 +33,10 @@ def _check_api_key(x_api_key: Optional[str]) -> None:
     """
     if not API_KEY:
         return
-    if x_api_key != API_KEY:
+    # hmac.compare_digest 而非 `!=`:避免時間側channel攻擊,讓攻擊者能靠回應
+    # 時間差一個字元一個字元猜出正確的 API_KEY。x_api_key 為 None 時提早短路,
+    # 不能把 None 傳進 compare_digest(會丟 TypeError)。
+    if not x_api_key or not hmac.compare_digest(x_api_key, API_KEY):
         raise HTTPException(status_code=401, detail="invalid or missing X-API-Key")
 
 

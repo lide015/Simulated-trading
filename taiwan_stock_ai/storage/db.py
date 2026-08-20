@@ -64,7 +64,11 @@ def upsert_rows(
 
     sql = f"INSERT INTO {table} ({col_list}) VALUES ({placeholders}) {conflict_clause}"
 
-    values = [[row[c] for c in columns] for row in rows]
+    # 用 .get() 而非 row[c]:目前所有呼叫端都是同一段程式碼組出整批 rows,
+    # 欄位集合天生一致,但如果哪天有 row 缺了某個欄位(例如上游 API 這筆剛好
+    # 沒回某個選填值),用 [] 會直接 KeyError 讓整批 upsert 失敗;.get() 讓
+    # 缺的欄位寫 NULL,不會因為單一筆資料不完整就搞掛整批。
+    values = [[row.get(c) for c in columns] for row in rows]
     conn.executemany(sql, values)
     return len(rows)
 
