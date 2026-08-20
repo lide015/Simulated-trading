@@ -126,6 +126,14 @@ class DecisionWriter:
             ).fetchall()
         return [_row_to_dict(r) for r in rows]
 
+    def list_all(self, limit: int = 500) -> list[dict[str, Any]]:
+        """列出全部決策(不論是否已回填 outcome),給儀表板瀏覽用。"""
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT * FROM decisions ORDER BY ts DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return [_row_to_dict(r) for r in rows]
+
     def get_stats(self) -> dict[str, Any]:
         with self._lock:
             total = self.conn.execute("SELECT COUNT(*) FROM decisions").fetchone()[0]
@@ -231,6 +239,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     group.add_argument("--json", metavar="JSON", help="把這筆 JSON 寫入資料庫")
     group.add_argument("--stats", action="store_true", help="顯示統計資訊")
     group.add_argument("--list", action="store_true", help="列出已回填 outcome 的決策")
+    group.add_argument("--list-all", action="store_true", help="列出全部決策(含尚未回填 outcome 的)")
     group.add_argument("--read", metavar="ID", help="讀取單筆決策")
     parser.add_argument(
         "--db", default=DEFAULT_DB_PATH, help="資料庫路徑(預設讀 DATABASE_PATH 環境變數)"
@@ -264,6 +273,10 @@ def main(argv: Optional[list[str]] = None) -> int:
 
         if args.list:
             _print_json(writer.list_completed())
+            return 0
+
+        if args.list_all:
+            _print_json(writer.list_all())
             return 0
 
         if args.read:

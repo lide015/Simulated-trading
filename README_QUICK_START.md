@@ -104,16 +104,33 @@ python scripts/decision_writer.py --read "dec-2026-08-15-001"
 
 👉 詳見 [Claude Integration Guide](docs/CLAUDE_INTEGRATION.md)
 
+## 🖥 後台儀表板
+
+```bash
+streamlit run dashboard/app.py
+```
+
+一個唯讀的 Streamlit 儀表板,同時看得到這個 repo 裡兩個子專案的資料:
+
+- **台股全能 AI 決策系統**(`taiwan_stock_ai/`):事實表健康度、訊號瀏覽、
+  以及一個「LINE 查詢預覽」——直接呼叫 LINE Bot 用的同一套規則引擎,不用
+  真的建 LINE 帳號就能看到查詢會回什麼。
+- **DecisionRecord 平台**:決策清單、統計數字(勝率/平均 R)、R 值分布圖、
+  單筆決策的完整 JSON。
+
+只讀不寫,不會跟排程批次或 CLI 互搶資料庫鎖(細節見
+`taiwan_stock_ai/README.md`「已知限制」)。
+
 ## 📋 計畫
 
 - [x] 資料庫 Schema (3 張表)
 - [x] decision_writer.py CLI 工具
 - [x] Claude 集成指南
+- [x] Streamlit 儀表板 (MVP)
 - [ ] L1-L3 實裝 (K 線 + 指標 + 訂單模擬)
 - [ ] L4-L5 實裝 (持倉 + 績效統計)
 - [ ] L6 實裝 (歸因引擎 + 24h 自動回填)
 - [ ] L7 實裝 (Discovery Engine)
-- [ ] Streamlit 儀表板 (MVP)
 
 ## 💬 範例
 

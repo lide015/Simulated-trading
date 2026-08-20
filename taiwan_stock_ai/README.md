@@ -52,6 +52,9 @@ python -m taiwan_stock_ai.scheduler.run_daily
 # 啟動 LINE webhook 開發伺服器
 uvicorn taiwan_stock_ai.notify.line_bot:app --reload --port 8000
 
+# 啟動後台儀表板(唯讀,看事實表健康度、訊號、LINE 查詢預覽)
+streamlit run dashboard/app.py
+
 # 跑測試(全部用合成資料,不打真實網路)
 pytest tests/
 ```
@@ -79,3 +82,9 @@ pytest tests/
 6. **回測與 Deflated Sharpe Ratio 驗證不在本 MVP 範圍**——依報告的批判性
    結論,當沖策略在有誠實的 walk-forward + DSR 驗證前不應自動化,這是
    刻意的範疇切割,不是遺漏。
+7. **DuckDB 檔案鎖是獨佔式的**:`dashboard/app.py` 一律用
+   `read_only=True` 開連線,原因就是排程批次(`scheduler/run_daily.py`)
+   跑的時候會拿到讀寫鎖,若儀表板此時也想用讀寫模式開同一個檔案會直接
+   失敗。反過來,如果批次剛好在儀表板已經開著唯讀連線時啟動,批次那邊
+   也可能連線失敗——兩者撞期的機率對個人排程來說很低,但如果真的遇到,
+   重跑批次或重新整理儀表板頁面即可,不是資料損毀。
