@@ -104,27 +104,33 @@ python scripts/decision_writer.py --read "dec-2026-08-15-001"
 
 👉 詳見 [Claude Integration Guide](docs/CLAUDE_INTEGRATION.md)
 
-## 🖥 後台儀表板
+## 🖥 前台 + 後台儀表板
 
 ```bash
 streamlit run dashboard/app.py
 ```
 
-一個唯讀的 Streamlit 儀表板,同時看得到這個 repo 裡兩個子專案的資料:
+一個 Streamlit App,兩個頁面(側欄切換),刻意分開公開/私密兩種性質:
 
-- **台股全能 AI 決策系統**(`taiwan_stock_ai/`):事實表健康度、訊號瀏覽、
-  以及一個「LINE 查詢預覽」——直接呼叫 LINE Bot 用的同一套規則引擎,不用
-  真的建 LINE 帳號就能看到查詢會回什麼。
-- **DecisionRecord 平台**:決策清單、統計數字(勝率/平均 R)、R 值分布圖、
-  單筆決策的完整 JSON。
+- **前台**(`dashboard/app.py`,**無密碼,任何人都能看**):搜尋股票代號、
+  紅漲綠跌報價、K 線圖、今日訊號觀察清單。只顯示規則引擎的描述性輸出
+  (「出現量增價漲」),不顯示任何交易決策細節。
+- **後台管理**(`dashboard/pages/1_後台管理.py`,**需要密碼**):
+  - **台股全能 AI 決策系統**(`taiwan_stock_ai/`):事實表健康度、訊號瀏覽
+    (含已排除的處置股)、以及一個「LINE 查詢預覽」——直接呼叫 LINE Bot
+    同一套規則引擎,不用真的建 LINE 帳號就能看到查詢會回什麼。
+  - **DecisionRecord 平台**:決策清單、統計數字(勝率/平均 R)、R 值分布圖、
+    單筆決策的完整 JSON(信心度、實際下單參數這些私密細節都在這裡)。
 
-只讀不寫,不會跟排程批次或 CLI 互搶資料庫鎖(細節見
-`taiwan_stock_ai/README.md`「已知限制」)。
+前台、後台共用同一份路徑/密碼邏輯(`dashboard/common.py`),只有後台會呼叫
+`require_password()`。兩個頁面都只讀不寫,不會跟排程批次或 CLI 互搶資料庫鎖
+(細節見 `taiwan_stock_ai/README.md`「已知限制」)。
 
-### 🔑 密碼保護
+### 🔑 密碼保護(僅後台)
 
-儀表板顯示的是交易決策細節,預設**拒絕顯示任何資料**,除非設定了
-`DASHBOARD_PASSWORD`(fail-closed,不會有「忘記設定就變成裸奔」的風險):
+後台顯示的是交易決策細節,預設**拒絕顯示任何資料**,除非設定了
+`DASHBOARD_PASSWORD`(fail-closed,不會有「忘記設定就變成裸奔」的風險)。
+前台完全不受這個設定影響,永遠不需要密碼:
 
 ```bash
 # 本機開發
@@ -149,8 +155,10 @@ Streamlit 官方免費託管,直接接這個 GitHub repo,repo 一有新 push 就
    ```toml
    DASHBOARD_PASSWORD = "換成一組夠長的密碼"
    ```
-4. 點 Deploy。網址預設是公開的(任何人都能打開登入頁),但沒有正確密碼
-   看不到任何資料——這正是選「需要密碼保護」這個選項時要的效果。
+4. 點 Deploy。網址打開後預設看到的是**前台**(行情/K 線,任何人都能看);
+   側欄點「後台管理」才會進入需要密碼的頁面,沒有正確密碼看不到任何交易
+   決策細節——這正是選「需要密碼保護」這個選項時要的效果:前台照樣公開,
+   私密資料仍然鎖著。
 5. 之後 `taiwan_stock_ai` 的每日批次(GitHub Actions)跟 `parse-decision.yml`
    都會把新資料 commit 回同一個 repo,Streamlit Cloud 偵測到 push 會自動
    重新部署,不用手動同步。
