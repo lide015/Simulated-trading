@@ -11,12 +11,21 @@
 啟動方式:
     streamlit run dashboard/app.py
 
+密碼保護:部署到 Streamlit Community Cloud 之類的公開託管後,網址預設任何
+人都能打開,而這支程式會直接顯示交易決策細節——這牴觸了本專案反覆強調的
+「不對外開放」原則。所以在畫出任何資料前,一律先過 `require_password()`
+這關,而且刻意 fail-closed:沒設定密碼就直接拒絕顯示,不會有「忘記設定
+就變成裸奔」的風險。設定方式見 `require_password()` 的說明與
+`README_QUICK_START.md`「🖥 後台儀表板」章節。
+
 技術選型依據 docs/taiwan-stock-ai-blueprint.md「(c) Streamlit vs
 Next.js+FastAPI」的建議:「MVP 先用 Streamlit 快速把資料層/訊號/回測視覺化
 跑出來……Streamlit 當內部研究儀表板」。
 """
 from __future__ import annotations
 
+import hmac
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -34,8 +43,57 @@ from decision_writer import DecisionWriter, DEFAULT_DB_PATH  # noqa: E402
 
 DISCLAIMER = "⚠ 本儀表板僅供開發者本人研究用途,資料非投資建議,請勿對外公開。"
 
+
+def _configured_password() -> str | None:
+    """密碼來源:優先讀 Streamlit secrets(Community Cloud 用這個),
+    本機開發沒有 secrets.toml 時退回讀環境變數 DASHBOARD_PASSWORD。"""
+    try:
+        return st.secrets["DASHBOARD_PASSWORD"]
+    except Exception:  # noqa: BLE001 - 沒有 secrets.toml 或沒設這個 key 都算「沒設密碼」
+        return os.environ.get("DASHBOARD_PASSWORD")
+
+
+def require_password() -> None:
+    """畫任何資料前的守門。已登入過的瀏覽器分頁(session_state)不用重輸。
+
+    已知限制:這只是單一靜態密碼 + session_state,沒有失敗次數鎖定機制,
+    擋不住有心人寫腳本硬猜。對「一個人自用、偶爾分享給自己手機看」這種
+    威脅模型是合理的防護等級;真的要更強的話之後可以換成
+    streamlit-authenticator 或放到有存取控制的內部網路後面。
+    """
+    expected = _configured_password()
+    if not expected:
+        st.error(
+            "⚠ 尚未設定 DASHBOARD_PASSWORD,基於安全考量拒絕顯示任何資料。\n\n"
+            "・本機執行:先 `export DASHBOARD_PASSWORD=你的密碼` 再啟動\n"
+            '・Streamlit Community Cloud:App settings → Secrets 加入 '
+            '`DASHBOARD_PASSWORD = "你的密碼"`'
+        )
+        st.stop()
+
+    if st.session_state.get("authenticated"):
+        return
+
+    st.title("🔒 登入")
+    password = st.text_input("密碼", type="password", key="password_input")
+    if st.button("登入"):
+        if hmac.compare_digest(password, expected):
+            st.session_state["authenticated"] = True
+            st.rerun()
+        else:
+            st.error("密碼錯誤")
+    st.stop()
+
+
 st.set_page_config(page_title="台股 AI / DecisionRecord 後台", layout="wide")
-st.title("後台管理儀表板")
+
+require_password()
+
+top_col, logout_col = st.columns([6, 1])
+top_col.title("後台管理儀表板")
+if logout_col.button("登出"):
+    st.session_state["authenticated"] = False
+    st.rerun()
 st.caption(DISCLAIMER)
 
 tab_stock, tab_decision = st.tabs(["📈 台股全能 AI 決策系統", "🧾 DecisionRecord 平台"])

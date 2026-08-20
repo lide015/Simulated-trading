@@ -121,6 +121,44 @@ streamlit run dashboard/app.py
 只讀不寫,不會跟排程批次或 CLI 互搶資料庫鎖(細節見
 `taiwan_stock_ai/README.md`「已知限制」)。
 
+### 🔑 密碼保護
+
+儀表板顯示的是交易決策細節,預設**拒絕顯示任何資料**,除非設定了
+`DASHBOARD_PASSWORD`(fail-closed,不會有「忘記設定就變成裸奔」的風險):
+
+```bash
+# 本機開發
+export DASHBOARD_PASSWORD="換成一組夠長的密碼"
+streamlit run dashboard/app.py
+```
+
+本機也可以複製 `.streamlit/secrets.toml.example` 成 `.streamlit/secrets.toml`
+填密碼(這個檔案已加進 `.gitignore`,不會被 commit)。
+
+### 🌐 部署成網站(Streamlit Community Cloud)
+
+Streamlit 官方免費託管,直接接這個 GitHub repo,repo 一有新 push 就自動
+重新部署,跟現有架構天生契合。這一步需要用你自己的帳號登入 GitHub 授權,
+沒辦法由 Claude 代勞,步驟如下:
+
+1. 前往 [share.streamlit.io](https://share.streamlit.io),用 GitHub 帳號登入
+2. 點「New app」,選這個 repo(`lide015/Simulated-trading`)、選分支
+   (例如 `claude/taiwan-stock-ai-system-review-nse4e4` 或合併後的 `main`)、
+   Main file path 填 `dashboard/app.py`
+3. 部署前先點「Advanced settings」→「Secrets」,貼上:
+   ```toml
+   DASHBOARD_PASSWORD = "換成一組夠長的密碼"
+   ```
+4. 點 Deploy。網址預設是公開的(任何人都能打開登入頁),但沒有正確密碼
+   看不到任何資料——這正是選「需要密碼保護」這個選項時要的效果。
+5. 之後 `taiwan_stock_ai` 的每日批次(GitHub Actions)跟 `parse-decision.yml`
+   都會把新資料 commit 回同一個 repo,Streamlit Cloud 偵測到 push 會自動
+   重新部署,不用手動同步。
+
+⚠ 免費方案沒有失敗登入次數鎖定,密碼要夠長;真的要更強的存取控制,之後
+可以換成 `streamlit-authenticator`,或把 app 放到有存取控制的內部網路
+(如 Tailscale/VPN)後面,不透過 Streamlit Cloud 公開網址。
+
 ## 📋 計畫
 
 - [x] 資料庫 Schema (3 張表)

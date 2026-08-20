@@ -1,6 +1,7 @@
 # 環境與密鑰
 .env
 *.env.local
+.streamlit/secrets.toml
 
 # Python
 __pycache__/
